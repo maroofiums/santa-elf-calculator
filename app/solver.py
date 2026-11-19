@@ -1,5 +1,84 @@
 from typing import Optional
 
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Instruction:
+    """
+    Represents one arithmetic instruction.
+
+    Example:
+        Instruction(left=0, operator="+", right=1)
+
+    Means:
+        register[2] = register[0] + register[1]
+    """
+
+    left: int
+    operator: str
+    right: int
+
+    def __post_init__(self):
+        if self.left < 0 or self.right < 0:
+            raise ValueError("Register indices cannot be negative")
+
+        if self.operator not in ("+", "-", "*", "/"):
+            raise ValueError(f"Invalid operator: {self.operator}")
+
+
+@dataclass
+class Program:
+    """
+    Stores and executes a sequence of arithmetic instructions.
+    """
+
+    instructions: list[Instruction] = field(default_factory=list)
+
+    def add_instruction(self, instruction: Instruction) -> None:
+        self.instructions.append(instruction)
+
+    def execute(
+        self,
+        start_numbers: list[int],
+        value_limit: int,
+    ) -> list[int]:
+        """
+        Execute instructions sequentially.
+
+        Every new result is appended to the register list.
+        """
+
+        registers = list(start_numbers)
+
+        for instruction in self.instructions:
+
+            if instruction.left >= len(registers):
+                raise ValueError("Left register does not exist")
+
+            if instruction.right >= len(registers):
+                raise ValueError("Right register does not exist")
+
+            a = registers[instruction.left]
+            b = registers[instruction.right]
+
+            result = apply_operation(
+                a,
+                b,
+                instruction.operator,
+                value_limit,
+            )
+
+            if result is None:
+                raise ValueError("Invalid arithmetic instruction")
+
+            registers.append(result)
+
+        return registers
+
+    def instruction_count(self) -> int:
+        return len(self.instructions)
+
 
 def add(a: int, b: int) -> int:
     """Return the sum of two integers."""
