@@ -1,11 +1,12 @@
-from app.puzzle import Puzzle
+from app.puzzle import load_puzzles, load_puzzle
 
-puzzle = Puzzle(
-    puzzle_id=1,
-    start_numbers=[2, 3],
-    targets=[11, 15, 21],
-    value_limit=1000
-)
+puzzles = load_puzzles("tests/data/sample.csv")
 
-print(puzzle)
-print("Number of targets:", puzzle.target_count)
+print("Total puzzles:", len(puzzles))
+
+for puzzle in puzzles:
+    print(puzzle)
+
+first = load_puzzle(1, "tests/data/sample.csv")
+
+print("Selected puzzle:", first)
