@@ -1,31 +1,62 @@
 from typing import Optional
-
 from dataclasses import dataclass, field
 
+from app.config import MAX_INSTRUCTIONS, MAX_REGISTERS
 
-@dataclass
+@dataclass(frozen=True)
 class Instruction:
     """
-    Represents one arithmetic instruction.
+    One Elf Calculator instruction.
 
     Example:
-        Instruction(left=0, operator="+", right=1)
+        Instruction("*", 0, 1, 2)
 
     Means:
-        register[2] = register[0] + register[1]
+        R2 = R0 * R1
     """
 
-    left: int
     operator: str
+    left: int
     right: int
+    destination: int
 
     def __post_init__(self):
-        if self.left < 0 or self.right < 0:
-            raise ValueError("Register indices cannot be negative")
-
         if self.operator not in ("+", "-", "*", "/"):
-            raise ValueError(f"Invalid operator: {self.operator}")
+            raise ValueError("Unsupported operator")
 
+        if any(
+            type(index) is not int or index < 0
+            for index in (self.left, self.right, self.destination)
+        ):
+            raise ValueError("Register indices must be non-negative integers")
+
+    def to_list(self) -> list:
+        return [
+            self.operator,
+            self.left,
+            self.right,
+            self.destination,
+        ]
+    
+@dataclass
+class ExecutionResult:
+    registers: list[Optional[int]]
+    targets_seen: set[int]
+    instruction_count: int
+
+    @property
+    def all_targets_found(self) -> bool:
+        return self.missing_targets == set()
+
+    @property
+    def missing_targets(self) -> set[int]:
+        return self._required_targets - self.targets_seen
+
+    _required_targets: set[int] = field(
+        default_factory=set,
+        repr=False
+    )
+    
 
 @dataclass
 class Program:
@@ -36,32 +67,88 @@ class Program:
     instructions: list[Instruction] = field(default_factory=list)
 
     def add_instruction(self, instruction: Instruction) -> None:
+        if len(self.instructions) >= MAX_INSTRUCTIONS:
+            raise ValueError("Maximum Instruction limit exceeded")
+        
         self.instructions.append(instruction)
+
+    def to_list(self) -> list[list]:
+        return [
+            instruction.to_list()
+            for instruction in self.instructions
+        ]
+
 
     def execute(
         self,
         start_numbers: list[int],
         value_limit: int,
-    ) -> list[int]:
+        targets: Optional[list[int]] = None,
+        register_count: int = MAX_REGISTERS,
+    ) -> ExecutionResult:
         """
-        Execute instructions sequentially.
+        Execute the program using reusable registers.
 
-        Every new result is appended to the register list.
+        Starting values occupy R0, R1, R2, ...
+        Every instruction writes to its destination register.
         """
 
-        registers = list(start_numbers)
+        if type(register_count) is not int:
+            raise ValueError("Invalid regiister count")
+
+        if not 1 <= register_count <= MAX_REGISTERS:
+            raise ValueError("Invalid Register Count")
+
+        if len(start_numbers) > register_count:
+            raise ValueError("Too many starting values")
+
+        if len(self.instructions) > MAX_INSTRUCTIONS:
+            raise ValueError("Maximum instruction limit exceeded")
+
+        
+
+        registers: list[Optional[int]] = [None] * register_count
+
+        for idx, value in enumerate(start_numbers):
+
+            if type(value) is not int or value <= 0:
+                raise ValueError("Invalid starting value")
+
+            if value > value_limit:
+                raise ValueError("Starting value exceeds `value_limit`")
+
+            registers[idx] = value
+
+        required_targets = set(targets or [])
+
+        targets_seen = {
+            value
+            for value in start_numbers
+            if value in required_targets
+        }
 
         for instruction in self.instructions:
 
-            if instruction.left >= len(registers):
-                raise ValueError("Left register does not exist")
+            indices = (
+                instruction.left,
+                instruction.right,
+                instruction.destination
+            )
 
-            if instruction.right >= len(registers):
-                raise ValueError("Right register does not exist")
+            if any(
+                idx  >= register_count
+                for idx in indices
+            ):
+                raise ValueError(
+                    "Register index out of range"
+                )
 
             a = registers[instruction.left]
             b = registers[instruction.right]
 
+            if a is None or b is None:
+                raise ValueError("Reading a uninitialized register")
+            
             result = apply_operation(
                 a,
                 b,
@@ -72,9 +159,18 @@ class Program:
             if result is None:
                 raise ValueError("Invalid arithmetic instruction")
 
-            registers.append(result)
+            registers[instruction.destination] = result
 
-        return registers
+            if result in required_targets:
+                targets_seen.add(result)
+    
+        return ExecutionResult(
+            registers=registers,
+            targets_seen=targets_seen,
+            instruction_count=self.instruction_count(),
+            _required_targets=required_targets
+        )
+    
 
     def instruction_count(self) -> int:
         return len(self.instructions)

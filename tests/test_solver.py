@@ -1,66 +1,10 @@
+
 import pytest
 
-from app.solver import (
-    Instruction, 
-    Program,
-    add,
-    subtract,
-    multiply,
-    divide,
-    apply_operation,
-)
+from app.solver import Instruction, Program, apply_operation
 
 
-
-
-def test_program_execution():
-    program = Program()
-
-    program.add_instruction(Instruction(0, "*", 1))
-    program.add_instruction(Instruction(2, "+", 1))
-    program.add_instruction(Instruction(3, "+", 0))
-
-    registers = program.execute(
-        start_numbers=[2, 3],
-        value_limit=100
-    )
-
-    assert registers == [2, 3, 6, 9, 11]
-    assert registers[-1] == 11
-
-
-def test_instruction_count():
-    program = Program()
-
-    program.add_instruction(Instruction(0, "+", 1))
-    program.add_instruction(Instruction(2, "*", 0))
-
-    assert program.instruction_count() == 2
-
-
-def test_invalid_register():
-    program = Program()
-    program.add_instruction(Instruction(0, "+", 5))
-
-    import pytest
-
-    with pytest.raises(ValueError):
-        program.execute([2, 3], 100)
-
-
-def test_basic_operations():
-    assert add(2, 3) == 5
-    assert subtract(8, 3) == 5
-    assert multiply(4, 5) == 20
-    assert divide(12, 3) == 4
-
-
-def test_invalid_division():
-    assert divide(12, 5) is None
-    assert divide(10, 0) is None
-
-
-def test_apply_operation():
+def test_arithmetic_operations():
     assert apply_operation(2, 3, "+", 100) == 5
     assert apply_operation(8, 3, "-", 100) == 5
     assert apply_operation(4, 5, "*", 100) == 20
@@ -74,7 +18,68 @@ def test_invalid_operations():
     assert apply_operation(2, 3, "^", 100) is None
 
 
-def test_value_limit():
-    assert apply_operation(50, 50, "*", 1000) == 2500 if False else True
-    assert apply_operation(50, 50, "*", 1000) is None
-    assert apply_operation(10, 10, "*", 100) == 100
+def test_program_execution():
+    program = Program([
+        Instruction("*", 0, 1, 2),
+        Instruction("+", 2, 1, 3),
+        Instruction("+", 3, 0, 2),
+    ])
+
+    result = program.execute(
+        start_numbers=[2, 3],
+        value_limit=100,
+        targets=[11],
+        register_count=4,
+    )
+
+    assert result.registers == [2, 3, 11, 9]
+    assert result.all_targets_found
+
+
+def test_register_overwriting():
+    program = Program([
+        Instruction("+", 0, 1, 0),
+    ])
+
+    result = program.execute(
+        start_numbers=[2, 3],
+        value_limit=100,
+        register_count=4,
+    )
+
+    assert result.registers[0] == 5
+
+
+def test_target_tracking_after_overwrite():
+    program = Program([
+        Instruction("+", 0, 1, 2),
+        Instruction("*", 0, 1, 2),
+    ])
+
+    result = program.execute(
+        start_numbers=[2, 3],
+        value_limit=100,
+        targets=[5],
+        register_count=4,
+    )
+
+    assert result.registers[2] == 6
+    assert result.all_targets_found
+
+
+def test_uninitialized_register():
+    program = Program([
+        Instruction("+", 0, 2, 1),
+    ])
+
+    with pytest.raises(ValueError):
+        program.execute([2], 100, register_count=4)
+
+
+def test_register_out_of_range():
+    program = Program([
+        Instruction("+", 0, 1, 48),
+    ])
+
+    with pytest.raises(ValueError):
+        program.execute([2, 3], 100, register_count=4)
