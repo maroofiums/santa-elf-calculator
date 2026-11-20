@@ -256,3 +256,201 @@ def apply_operation(
         return None
 
     return result
+
+
+
+# Baseline Puzzle Solver
+
+def _find_direct_instruction(
+    known: dict[int, int],
+    target: int,
+    value_limit: int,
+) -> Optional[Instruction]:
+    """Find one instruction that generates the target."""
+
+    registers = list(known.items())
+
+    for left_index, left_value in registers:
+        for right_index, right_value in registers:
+
+            for operator in ("+", "-", "*", "/"):
+                result = apply_operation(
+                    left_value,
+                    right_value,
+                    operator,
+                    value_limit,
+                )
+
+                if result == target:
+                    return Instruction(
+                        operator,
+                        left_index,
+                        right_index,
+                        0,  # Destination is assigned by solve_puzzle.
+                    )
+
+    return None
+
+
+def _find_two_step_solution(
+    known: dict[int, int],
+    target: int,
+    value_limit: int,
+    scratch_register: int,
+) -> Optional[tuple[Instruction, Instruction]]:
+    """
+    Search for:
+        existing values -> intermediate -> target
+
+    The intermediate is written to a temporary register.
+    """
+
+    registers = list(known.items())
+
+    for left_index, left_value in registers:
+        for right_index, right_value in registers:
+
+            for operator in ("+", "-", "*", "/"):
+                intermediate = apply_operation(
+                    left_value,
+                    right_value,
+                    operator,
+                    value_limit,
+                )
+
+                if intermediate is None:
+                    continue
+
+                if intermediate in known.values():
+                    continue
+
+                for existing_index, existing_value in registers:
+
+                    combinations = (
+                        (intermediate, existing_value),
+                        (existing_value, intermediate),
+                    )
+
+                    for second_left, second_right in combinations:
+                        for second_operator in ("+", "-", "*", "/"):
+
+                            result = apply_operation(
+                                second_left,
+                                second_right,
+                                second_operator,
+                                value_limit,
+                            )
+
+                            if result == target:
+
+                                first = Instruction(
+                                    operator,
+                                    left_index,
+                                    right_index,
+                                    scratch_register,
+                                )
+
+                                if second_left == intermediate:
+                                    second = Instruction(
+                                        second_operator,
+                                        scratch_register,
+                                        existing_index,
+                                        0,
+                                    )
+                                else:
+                                    second = Instruction(
+                                        second_operator,
+                                        existing_index,
+                                        scratch_register,
+                                        0,
+                                    )
+
+                                return first, second
+
+    return None
+
+
+def solve_puzzle(puzzle) -> Program:
+    """
+    Baseline greedy solver.
+
+    Supports:
+        - Direct one-instruction solutions.
+        - Two-instruction solutions with one intermediate.
+
+    Targets that cannot be generated with this limited search
+    remain unsolved.
+    """
+
+    program = Program()
+
+    register_count = puzzle.registers
+    next_register = len(puzzle.start_numbers)
+    scratch_register = register_count - 1
+
+    known = {
+        index: value
+        for index, value in enumerate(puzzle.start_numbers)
+    }
+
+    for target in puzzle.targets:
+
+        # Already available from starting values or earlier targets.
+        if target in known.values():
+            continue
+
+        if next_register >= register_count:
+            break
+
+        # Strategy 1: One instruction.
+        direct = _find_direct_instruction(
+            known,
+            target,
+            puzzle.value_limit,
+        )
+
+        if direct is not None:
+            program.add_instruction(
+                Instruction(
+                    direct.operator,
+                    direct.left,
+                    direct.right,
+                    next_register,
+                )
+            )
+
+            known[next_register] = target
+            next_register += 1
+            continue
+
+        # Strategy 2: Two instructions using a temporary register.
+        if scratch_register in known:
+            continue
+
+        solution = _find_two_step_solution(
+            known,
+            target,
+            puzzle.value_limit,
+            scratch_register,
+        )
+
+        if solution is None:
+            continue
+
+        first, second = solution
+
+        program.add_instruction(first)
+
+        program.add_instruction(
+            Instruction(
+                second.operator,
+                second.left,
+                second.right,
+                next_register,
+            )
+        )
+
+        known[next_register] = target
+        next_register += 1
+
+    return program
