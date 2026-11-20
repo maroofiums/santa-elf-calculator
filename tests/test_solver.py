@@ -1,4 +1,3 @@
-
 import pytest
 
 from app.solver import Instruction, Program, apply_operation
