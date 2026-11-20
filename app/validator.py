@@ -19,7 +19,106 @@ class ValidationResult:
     error: Optional[str] = None
 
 
-# Program Validator
+
+
+@dataclass
+class SubmissionEvaluation:
+    total_puzzles: int
+    evaluated_puzzles: int
+    valid_programs: int
+    solved_puzzles: int
+    targets_found: int
+    total_targets: int
+    total_instructions: int
+
+    missing_programs: list[str] = field(default_factory=list)
+    extra_programs: list[str] = field(default_factory=list)
+    invalid_programs: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def target_coverage(self) -> float:
+        if self.total_targets == 0:
+            return 0.0
+
+        return self.targets_found / self.total_targets
+
+    @property
+    def fully_solved_rate(self) -> float:
+        if self.total_puzzles == 0:
+            return 0.0
+
+        return self.solved_puzzles / self.total_puzzles
+
+
+def evaluate_submission(
+    puzzles: list[Puzzle],
+    programs: dict[str, Program],
+) -> SubmissionEvaluation:
+    """
+    Evaluate a complete submission against a puzzle dataset.
+    """
+
+    puzzle_map = {
+        puzzle.puzzle_id: puzzle
+        for puzzle in puzzles
+    }
+
+    missing_programs = [
+        puzzle_id
+        for puzzle_id in puzzle_map
+        if puzzle_id not in programs
+    ]
+
+    extra_programs = [
+        puzzle_id
+        for puzzle_id in programs
+        if puzzle_id not in puzzle_map
+    ]
+
+    valid_programs = 0
+    solved_puzzles = 0
+    targets_found = 0
+    total_targets = 0
+    total_instructions = 0
+
+    invalid_programs = {}
+
+    for puzzle_id, puzzle in puzzle_map.items():
+
+        total_targets += puzzle.target_count
+
+        program = programs.get(puzzle_id)
+
+        if program is None:
+            continue
+
+        total_instructions += len(program.instructions)
+
+        result = validate_program(puzzle, program)
+
+        if not result.valid:
+            invalid_programs[puzzle_id] = result.error or "Unknown error"
+            continue
+
+        valid_programs += 1
+        targets_found += result.targets_found
+
+        if result.solved:
+            solved_puzzles += 1
+
+    return SubmissionEvaluation(
+        total_puzzles=len(puzzles),
+        evaluated_puzzles=len(puzzle_map) - len(missing_programs),
+        valid_programs=valid_programs,
+        solved_puzzles=solved_puzzles,
+        targets_found=targets_found,
+        total_targets=total_targets,
+        total_instructions=total_instructions,
+        missing_programs=missing_programs,
+        extra_programs=extra_programs,
+        invalid_programs=invalid_programs,
+    )
+
 
 def validate_program(
     puzzle: Puzzle,
