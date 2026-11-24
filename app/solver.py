@@ -1,6 +1,7 @@
 from typing import Optional
 from dataclasses import dataclass, field
 
+from app.puzzle import Puzzle
 from app.config import MAX_INSTRUCTIONS, MAX_REGISTERS
 
 @dataclass(frozen=True)
@@ -211,7 +212,7 @@ def apply_operation(
     b: int,
     operator: str,
     value_limit: int,
-) -> Optional[int]:
+    ) -> Optional[int]:
     """
     Execute an arithmetic operation under puzzle constraints.
 
@@ -265,7 +266,7 @@ def _find_direct_instruction(
     known: dict[int, int],
     target: int,
     value_limit: int,
-) -> Optional[Instruction]:
+    ) -> Optional[Instruction]:
     """Find one instruction that generates the target."""
 
     registers = list(known.items())
@@ -297,7 +298,7 @@ def _find_two_step_solution(
     target: int,
     value_limit: int,
     scratch_register: int,
-) -> Optional[tuple[Instruction, Instruction]]:
+    ) -> Optional[tuple[Instruction, Instruction]]:
     """
     Search for:
         existing values -> intermediate -> target
@@ -370,87 +371,52 @@ def _find_two_step_solution(
     return None
 
 
-def solve_puzzle(puzzle) -> Program:
-    """
-    Baseline greedy solver.
 
-    Supports:
-        - Direct one-instruction solutions.
-        - Two-instruction solutions with one intermediate.
-
-    Targets that cannot be generated with this limited search
-    remain unsolved.
+def solve_puzzle(puzzle: Puzzle) -> Program:
     """
+    Generate every target using binary construction.
+
+    R4 stores the constant 1.
+    R5 is the reusable accumulator.
+    """
+
+    if puzzle.registers < 6:
+        raise ValueError("Binary solver requires at least 6 registers")
+
+    if not puzzle.start_numbers or puzzle.start_numbers[0] <= 0:
+        raise ValueError("A positive starting value is required")
 
     program = Program()
 
-    register_count = puzzle.registers
-    next_register = len(puzzle.start_numbers)
-    scratch_register = register_count - 1
+    # Create constant 1: R4 = R0 / R0
+    program.add_instruction(
+        Instruction("/", 0, 0, 4)
+    )
 
-    known = {
-        index: value
-        for index, value in enumerate(puzzle.start_numbers)
-    }
+    for target in sorted(set(puzzle.targets)):
 
-    for target in puzzle.targets:
+        if target <= 0 or target > puzzle.value_limit:
+            raise ValueError(f"Invalid target: {target}")
 
-        # Already available from starting values or earlier targets.
-        if target in known.values():
-            continue
-
-        if next_register >= register_count:
-            break
-
-        # Strategy 1: One instruction.
-        direct = _find_direct_instruction(
-            known,
-            target,
-            puzzle.value_limit,
-        )
-
-        if direct is not None:
-            program.add_instruction(
-                Instruction(
-                    direct.operator,
-                    direct.left,
-                    direct.right,
-                    next_register,
-                )
-            )
-
-            known[next_register] = target
-            next_register += 1
-            continue
-
-        # Strategy 2: Two instructions using a temporary register.
-        if scratch_register in known:
-            continue
-
-        solution = _find_two_step_solution(
-            known,
-            target,
-            puzzle.value_limit,
-            scratch_register,
-        )
-
-        if solution is None:
-            continue
-
-        first, second = solution
-
-        program.add_instruction(first)
-
+        # Reset accumulator to 1.
         program.add_instruction(
-            Instruction(
-                second.operator,
-                second.left,
-                second.right,
-                next_register,
-            )
+            Instruction("*", 4, 4, 5)
         )
 
-        known[next_register] = target
-        next_register += 1
+        # Construct target using its binary representation.
+        binary = bin(target)[3:]
+
+        for bit in binary:
+
+            # Double current value.
+            program.add_instruction(
+                Instruction("+", 5, 5, 5)
+            )
+
+            # Add 1 when the next binary bit is 1.
+            if bit == "1":
+                program.add_instruction(
+                    Instruction("+", 5, 4, 5)
+                )
 
     return program
